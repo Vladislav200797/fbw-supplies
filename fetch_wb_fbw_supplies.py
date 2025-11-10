@@ -4,6 +4,7 @@
 Выгрузка FBW поставок из WB в Supabase (schema public).
 POST /api/v1/supplies требует dates[].Type как СТРОКУ:
 'createDate' | 'supplyDate' | 'factDate' | 'updatedDate'.
+Поддерживаем статусы как числа (1..6) и как названия ('запланировано', ...).
 Обходим все указанные типы дат, объединяем без дублей по wb_key,
 полностью обновляем таблицу (delete -> insert).
 """
@@ -27,13 +28,53 @@ TABLE                 = os.getenv("SUPABASE_TABLE", "fbw_supplies")
 # Период выгрузки (дней назад от "сейчас по МСК")
 SUPPLIES_DAYS         = int(os.getenv("SUPPLIES_DAYS", "365"))
 
-# Статусы поставок (1..6), по умолчанию все
-STATUSES_ENV          = os.getenv("SUPPLIES_STATUSES", "1,2,3,4,5,6")
-STATUSES              = [int(x) for x in STATUSES_ENV.split(",") if x.strip()]
-
-# Типы дат для фильтра WB. ДОЛЖНЫ БЫТЬ строками: createDate,supplyDate,factDate,updatedDate
+# Типы дат: строками: createDate,supplyDate,factDate,updatedDate
 DATE_TYPES_ENV        = os.getenv("SUPPLIES_DATE_TYPES", "createDate,supplyDate,factDate,updatedDate")
 DATE_TYPES            = [x.strip() for x in DATE_TYPES_ENV.split(",") if x.strip()]
+
+# ===== Маппинг статусов (имя -> id) и разбор ENV =====
+STATUS_NAME_TO_ID = {
+    # RU
+    "не запланировано": 1,
+    "запланировано": 2,
+    "отгрузка разрешена": 3,
+    "идёт приёмка": 4, "идет приёмка": 4, "идет приемка": 4, "идёт приемка": 4,
+    "принято": 5,
+    "отгружено на воротах": 6,
+    # EN
+    "not planned": 1,
+    "planned": 2,
+    "shipping allowed": 3,
+    "acceptance in progress": 4,
+    "accepted": 5,
+    "shipped at gates": 6,
+}
+
+def parse_statuses() -> List[int]:
+    names_env = os.getenv("SUPPLIES_STATUS_NAMES", "").strip()
+    if names_env:
+        ids: List[int] = []
+        for raw in names_env.split(","):
+            name = raw.strip().lower()
+            if not name:
+                continue
+            if name not in STATUS_NAME_TO_ID:
+                allowed = ", ".join(sorted(STATUS_NAME_TO_ID.keys()))
+                fail(f"Unknown status name: {raw!r}. Allowed names: {allowed}")
+            ids.append(STATUS_NAME_TO_ID[name])
+        return sorted(set(ids))
+    # fallback на числовой список
+    nums = os.getenv("SUPPLIES_STATUSES", "1,2,3,4,5,6")
+    ids = []
+    for x in nums.split(","):
+        x = x.strip()
+        if not x:
+            continue
+        v = int(x)
+        if v not in (1,2,3,4,5,6):
+            fail(f"Invalid status id {v}; allowed 1..6")
+        ids.append(v)
+    return sorted(set(ids))
 
 API_URL = "https://supplies-api.wildberries.ru/api/v1/supplies"
 HEADERS = {
@@ -50,8 +91,7 @@ def msk_now() -> datetime:
     return datetime.now(timezone(timedelta(hours=3)))  # MSK (UTC+3)
 
 def msk_iso(dt: datetime) -> str:
-    # ISO 8601 с явной зоной +03:00
-    return dt.isoformat(timespec="seconds")
+    return dt.isoformat(timespec="seconds")  # ISO 8601 с зоной +03:00
 
 def fetch_chunk(offset: int, limit: int, date_start: str, date_end: str, statuses: List[int], date_type: str) -> List[Dict[str, Any]]:
     """
@@ -88,6 +128,7 @@ def normalize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         supply_id   = r.get("supplyID")
         preorder_id = r.get("preorderID")
 
+        # Стабильный PK: S:<supplyID> или P:<preorderID>
         if supply_id is not None:
             try:
                 wb_key = f"S:{int(supply_id)}"
@@ -130,6 +171,8 @@ def main():
     if not DATE_TYPES:
         fail("SUPPLIES_DATE_TYPES is empty or invalid (expect comma list like 'createDate,updatedDate')")
 
+    statuses = parse_statuses()
+
     # Период по МСК
     end_dt   = msk_now()
     start_dt = end_dt - timedelta(days=SUPPLIES_DAYS)
@@ -145,7 +188,7 @@ def main():
     for dt in DATE_TYPES:
         offset = 0
         while True:
-            rows = fetch_chunk(offset, limit, date_start, date_end, STATUSES, dt)
+            rows = fetch_chunk(offset, limit, date_start, date_end, statuses, dt)
             total_requests += 1
             for item in normalize_rows(rows):
                 combined[item["wb_key"]] = item  # merge без дублей
