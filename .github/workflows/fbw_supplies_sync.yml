@@ -29,8 +29,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_SCHEMA: "public"
           SUPABASE_TABLE:  "fbw_supplies"
-          # период выгрузки (дней) и статусы можно менять без коммитов:
-          SUPPLIES_DAYS:    "365"
-          SUPPLIES_STATUSES: "1,2,3,4,5,6"
+          # ниже можно менять поведение без коммитов:
+          SUPPLIES_DAYS:      "365"            # окно по датам (дней назад)
+          SUPPLIES_STATUSES:  "1,2,3,4,5,6"    # статусы WB
+          SUPPLIES_DATE_TYPES: "1,2,3,4"       # 1=create, 2=plan, 3=fact, 4=updated
         run: |
           python fetch_wb_fbw_supplies.py
