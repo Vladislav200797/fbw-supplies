@@ -12,12 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show repo tree (debug)
-        run: |
-          pwd
-          ls -la
-          python -V
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -28,17 +22,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check required env (debug)
-        env:
-          WB_SUPPLIES_TOKEN:    ${{ secrets.WB_SUPPLIES_TOKEN }}
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          test -n "$WB_SUPPLIES_TOKEN"    || (echo "WB_SUPPLIES_TOKEN is empty" && exit 1)
-          test -n "$SUPABASE_URL"         || (echo "SUPABASE_URL is empty" && exit 1)
-          test -n "$SUPABASE_SERVICE_KEY" || (echo "SUPABASE_SERVICE_KEY is empty" && exit 1)
-          echo "All required secrets are present (values masked)."
-
       - name: Run sync
         env:
           WB_SUPPLIES_TOKEN:    ${{ secrets.WB_SUPPLIES_TOKEN }}
@@ -46,8 +29,12 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_SCHEMA: "public"
           SUPABASE_TABLE:  "fbw_supplies"
-          SUPPLIES_DAYS:      "365"
-          SUPPLIES_STATUSES:  "1,2,3,4,5,6"
-          SUPPLIES_DATE_TYPES: "createDate,supplyDate,factDate,updatedDate"
+          # окно выгрузки и фильтры
+          SUPPLIES_DAYS:        "365"
+          # Вариант 1: числа
+          SUPPLIES_STATUSES:    "1,2,3,4,5,6"
+          # Вариант 2: названия (переключись, если удобнее; тогда SUPPLIES_STATUSES можно убрать)
+          # SUPPLIES_STATUS_NAMES: "запланировано, принято, отгружено на воротах"
+          SUPPLIES_DATE_TYPES:  "createDate,supplyDate,factDate,updatedDate"
         run: |
           python fetch_wb_fbw_supplies.py
