@@ -1,0 +1,36 @@
+name: Sync FBW Supplies (WB → Supabase)
+
+on:
+  schedule:
+    - cron: "0 4 * * *"   # 07:00 MSK == 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run sync
+        env:
+          WB_SUPPLIES_TOKEN:    ${{ secrets.WB_SUPPLIES_TOKEN }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SCHEMA: "public"
+          SUPABASE_TABLE:  "fbw_supplies"
+          # период выгрузки (дней) и статусы можно менять без коммитов:
+          SUPPLIES_DAYS:    "365"
+          SUPPLIES_STATUSES: "1,2,3,4,5,6"
+        run: |
+          python fetch_wb_fbw_supplies.py
